@@ -1,0 +1,14 @@
+﻿{
+    "pluginID":  "cd8x97tbx8kmz55m",
+    "pluginKey":  "OCRheading",
+    "iconPath":  "",
+    "desc":  "",
+    "name":  "OCRheading",
+    "versionCode":  "1",
+    "versionName":  "0.0.1",
+    "jsMainPath":  "index",
+    "uses-permissions": [
+      "plugin.permission.FILE:READ",
+      "plugin.permission.FILE:WRITE"
+    ]
+}
