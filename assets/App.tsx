@@ -83,7 +83,7 @@ function App(): React.JSX.Element {
       {result?.success && !closeStuck && (
         <>
           <Text style={[styles.statusText, textColor]}>✅ Done</Text>
-          <Text style={[styles.errorText, textColor]}>RAW: {JSON.stringify(result)}</Text>
+          {result.message && <Text style={[styles.errorText, textColor]}>{result.message}</Text>}
         </>
       )}
       {result?.success && closeStuck && (

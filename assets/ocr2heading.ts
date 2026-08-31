@@ -55,20 +55,6 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
     ));
     if (!writeOk) return {success: false, message: 'File-write permission was not granted.'};
 
-    // Diagnostic: is the current page number itself fresh, independent of
-    // the lasso? Narrows whether staleness is lasso-specific or broader.
-    // (Early-save idea REMOVED here — saveCurrentNote() clears the current
-    // lasso selection, per this file's own original comment further down;
-    // calling it before reading the lasso broke the read entirely, exactly
-    // as that comment warned. My mistake for not weighing that first.)
-    let currentPageInfo = 'n/a';
-    try {
-      const pageNumRes: any = await withTimeout('getCurrentPageNum', PluginCommAPI.getCurrentPageNum());
-      currentPageInfo = JSON.stringify(pageNumRes);
-    } catch (e: any) {
-      currentPageInfo = `threw: ${e?.message}`;
-    }
-
     report('Reading selected handwriting…');
     const lassoRes: any = await withTimeout('reading the lasso', PluginCommAPI.getLassoElements());
     if (!lassoRes?.success || !Array.isArray(lassoRes.result) || lassoRes.result.length === 0) {
@@ -183,23 +169,10 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
     if (!saveRes?.success || saveRes.result === false) {
       return {success: false, message: errorMessage(saveRes, 'Changes were made, but the note could not be saved.')};
     }
-
-    // Explicitly release the lasso selection. Testing whether this resets
-    // whatever ambient lasso reference getLassoElements() was returning
-    // stale on the NEXT plugin invocation — clearElementCache() alone did
-    // not fix that; this targets the lasso/selection state specifically,
-    // which appears to be a separate system.
-    report('Releasing selection…');
-    try {
-      await withTimeout('releasing the lasso selection', PluginCommAPI.setLassoBoxState(2));
-    } catch {
-      // best-effort — don't fail the whole conversion over cleanup
-    }
-
     report('Complete');
     return {
       success: true,
-      message: `text="${recognizedText}" page=${elements[0]?.pageNum} numsInPage=${elements.map((e: any) => e.numInPage).join(',')} elementsLength=${elements.length} rect=${JSON.stringify(rect)} currentPage=${currentPageInfo}`,
+      message: `text="${recognizedText}" page=${elements[0]?.pageNum} numsInPage=${elements.map((e: any) => e.numInPage).join(',')}`,
     };
   } catch (err: any) {
     return {success: false, message: err?.message ?? String(err)};
