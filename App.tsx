@@ -6,6 +6,7 @@
 import React from 'react';
 import {
   ActivityIndicator,
+  DeviceEventEmitter,
   StatusBar,
   StyleSheet,
   Text,
@@ -15,55 +16,64 @@ import {
 } from 'react-native';
 import { PluginManager } from 'sn-plugin-lib';
 import { convertHandwritingToHeading, ConversionResult } from './ocr2heading';
+import { checkPendingButton } from './pluginButtonBridge';
 
 /**
  * Plugin View
- * Runs the handwriting-to-heading conversion immediately on open.
- * On success, closes itself automatically. On failure, stays open
- * with the error shown so it can be diagnosed without a console.
+ * Runs the handwriting-to-heading conversion on EVERY button press — not
+ * just once on mount. The component may stay alive across separate
+ * presses, so re-running only requires reacting to the button-press event
+ * (via pluginButtonBridge), not remounting.
  */
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
   const [result, setResult] = React.useState<ConversionResult | null>(null);
-  const [step, setStep] = React.useState<string>('Starting…');
-  const [closeStuck, setCloseStuck] = React.useState(false);
+  const [step, setStep] = React.useState<string>('Converting…');
   const textColor = { color: isDarkMode ? '#ffffff' : '#000000' };
 
   const handleClose = () => {
     PluginManager.closePluginView();
   };
 
-  React.useEffect(() => {
+  const runOnce = React.useCallback(() => {
     let cancelled = false;
+    setResult(null);
+    setStep('Starting…');
     convertHandwritingToHeading((s) => {
       if (!cancelled) setStep(s);
     }).then((res) => {
       if (cancelled) return;
       setResult(res);
       if (res.success) {
-        // TEMPORARILY DISABLED auto-close so the diagnostic message
-        // (recognized text / page / element indices) stays visible long
-        // enough to read on the second run. Re-enable once the "skips to
-        // done but does nothing" bug is understood.
-        /*
-        const closeTimer = setTimeout(() => setCloseStuck(true), 3000);
         setTimeout(() => {
-          if (cancelled) return;
-          try {
-            PluginManager.closePluginView();
-          } catch (e) {
-            setCloseStuck(true);
-          } finally {
-            clearTimeout(closeTimer);
-          }
+          if (!cancelled) PluginManager.closePluginView();
         }, 400);
-        */
       }
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  React.useEffect(() => {
+    // Clear any pending press recorded before this listener could attach —
+    // we always run once on mount regardless (mount only happens as a
+    // direct result of a press when showType:1), this just avoids a stale
+    // pending flag lingering into a future re-subscription.
+    checkPendingButton();
+    let cleanupCurrent = runOnce();
+
+    // React to every SUBSEQUENT press while this component stays mounted.
+    const sub = DeviceEventEmitter.addListener('pluginButton', () => {
+      cleanupCurrent();
+      cleanupCurrent = runOnce();
+    });
+
+    return () => {
+      cleanupCurrent();
+      sub.remove();
+    };
+  }, [runOnce]);
 
   return (
     <View style={styles.container}>
@@ -80,17 +90,7 @@ function App(): React.JSX.Element {
           <Text style={[styles.statusText, textColor]}>{step}</Text>
         </>
       )}
-      {result?.success && !closeStuck && (
-        <>
-          <Text style={[styles.statusText, textColor]}>✅ Done</Text>
-          <Text style={[styles.errorText, textColor]}>RAW: {JSON.stringify(result)}</Text>
-        </>
-      )}
-      {result?.success && closeStuck && (
-        <Text style={[styles.errorText, textColor]}>
-          ✅ Conversion succeeded, but closing the plugin view is stuck. Tap ✕ to exit manually.
-        </Text>
-      )}
+      {result?.success && <Text style={[styles.statusText, textColor]}>✅ Done</Text>}
       {result && !result.success && (
         <Text style={[styles.errorText, textColor]}>❌ {result.message}</Text>
       )}
