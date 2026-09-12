@@ -1,9 +1,10 @@
 /** Mirrors the native flow: recognize -> replace -> dismiss -> re-lasso -> heading. */
 import {PluginCommAPI, PluginNoteAPI, PluginManager} from 'sn-plugin-lib';
-import {loadSettings} from './settings';
 
 export type ConversionResult = {success: boolean; message?: string};
 export type ProgressReporter = (step: string) => void;
+const TITLE_STYLE = 1;
+const OCR_FONT_SIZE = 96;
 const STEP_TIMEOUT_MS = 20_000;
 
 async function ensurePermission(permission: string, desc: string): Promise<boolean> {
@@ -31,6 +32,8 @@ export async function convertHandwritingToHeading(report: ProgressReporter = () 
     return await runConversion(report);
   } finally {
     // Release every Element this run touched, regardless of outcome.
+    // Testing whether leftover native-side cache from one run is what's
+    // causing the NEXT run to hang on its very first OCR/lasso call.
     try {
       PluginCommAPI.clearElementCache();
     } catch {
@@ -41,11 +44,7 @@ export async function convertHandwritingToHeading(report: ProgressReporter = () 
 
 async function runConversion(report: ProgressReporter): Promise<ConversionResult> {
   try {
-    const settings = await loadSettings();
-    const OCR_FONT_SIZE = settings.fontSize;
-    const TITLE_STYLE = settings.headingStyle;
-
-    /* report('Checking permissions…'); */
+    report('Checking permissions…');
     const readOk = await withTimeout('file-read permission check', ensurePermission(
       'plugin.permission.FILE:READ', 'Read the selected handwriting for OCR.',
     ));
@@ -56,7 +55,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
     ));
     if (!writeOk) return {success: false, message: 'File-write permission was not granted.'};
 
-    /* report('Reading selected handwriting…'); */
+    report('Reading selected handwriting…');
     const lassoRes: any = await withTimeout('reading the lasso', PluginCommAPI.getLassoElements());
     if (!lassoRes?.success || !Array.isArray(lassoRes.result) || lassoRes.result.length === 0) {
       return {success: false, message: errorMessage(lassoRes, 'Select handwriting with the lasso first.')};
@@ -66,7 +65,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       return {success: false, message: 'The selection must contain handwriting strokes only.'};
     }
 
-    /* report('Reading selection bounds…'); */
+    report('Reading selection bounds…');
     const [sizeRes, rectRes]: any[] = await Promise.all([
       withTimeout('reading the page size', PluginCommAPI.getPageDisplaySize()),
       withTimeout('reading the lasso bounds', PluginCommAPI.getLassoRect()),
@@ -78,7 +77,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       return {success: false, message: errorMessage(rectRes, 'Could not read the lasso bounds.')};
     }
 
-    /* report('Recognizing handwriting…'); */
+    report('Recognizing handwriting…');
     const recogRes: any = await withTimeout(
       'handwriting recognition', PluginCommAPI.recognizeElements(elements, sizeRes.result),
     );
@@ -92,7 +91,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
     const rect = rectRes.result;
     // Keep the original lasso alive until deletion. saveCurrentNote() clears
     // that selection on Chauvet 3.29.43_beta and must not run before this call.
-    /* report('Replacing handwriting…'); */
+    report('Replacing handwriting…');
     const deleteRes: any = await withTimeout(
       'removing the lassoed handwriting', PluginCommAPI.deleteLassoElements(),
     );
@@ -127,7 +126,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       right: Math.round(textLeft + desiredWidth),
       bottom: Math.round(textTop + desiredHeight),
     };
-    /* report('Inserting recognized text…'); */
+    report('Inserting recognized text…');
     const insertRes: any = await withTimeout('inserting the OCR text', PluginNoteAPI.insertText({
       textContentFull: recognizedText,
       textRect,
@@ -140,7 +139,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       return {success: false, message: `Handwriting was removed, but OCR text insertion failed: ${errorMessage(insertRes, 'unknown error')}`};
     }
 
-    /* report('Selecting recognized text…'); */
+    report('Selecting recognized text…');
     const lassoTextRes: any = await withTimeout(
       'selecting the OCR text', PluginCommAPI.lassoElements(textRect),
     );
@@ -149,7 +148,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
     }
 
     // Verify that the programmatic lasso found a text box before promoting it.
-    /* report('Verifying text selection…'); */
+    report('Verifying text selection…');
     const selectedTextRes: any = await withTimeout(
       'verifying the OCR text selection', PluginNoteAPI.getLassoText(),
     );
@@ -157,7 +156,7 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       return {success: false, message: errorMessage(selectedTextRes, 'The new text box was not selected.')};
     }
 
-    /* report('Promoting text to heading…'); */
+    report('Promoting text to heading…');
     const titleRes: any = await withTimeout(
       'promoting the OCR text to a heading', PluginNoteAPI.setLassoTitle({style: TITLE_STYLE}),
     );
@@ -165,23 +164,16 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       return {success: false, message: errorMessage(titleRes, 'The OCR text could not be promoted to a heading.')};
     }
 
-    /* report('Saving completed heading…'); */
+    report('Saving completed heading…');
     const saveRes: any = await withTimeout('saving the note', PluginNoteAPI.saveCurrentNote());
     if (!saveRes?.success || saveRes.result === false) {
       return {success: false, message: errorMessage(saveRes, 'Changes were made, but the note could not be saved.')};
     }
-
-    // Explicit cleanup — release the lasso selection now that we're done
-    // with it.
-    /* report('Releasing selection…'); */
-    try {
-      await withTimeout('releasing the lasso selection', PluginCommAPI.setLassoBoxState(2));
-    } catch {
-      // best-effort — don't fail the whole conversion over cleanup
-    }
-
-    /* report('Complete'); */
-    return {success: true, message: recognizedText};
+    report('Complete');
+    return {
+      success: true,
+      message: `text="${recognizedText}" page=${elements[0]?.pageNum} numsInPage=${elements.map((e: any) => e.numInPage).join(',')}`,
+    };
   } catch (err: any) {
     return {success: false, message: err?.message ?? String(err)};
   }
