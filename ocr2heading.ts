@@ -1,9 +1,10 @@
 /** Mirrors the native flow: recognize -> replace -> dismiss -> re-lasso -> heading. */
 import {PluginCommAPI, PluginNoteAPI, PluginManager} from 'sn-plugin-lib';
-import {loadSettings} from './settings';
 
 export type ConversionResult = {success: boolean; message?: string};
 export type ProgressReporter = (step: string) => void;
+const TITLE_STYLE = 1;
+const OCR_FONT_SIZE = 96;
 const STEP_TIMEOUT_MS = 20_000;
 
 async function ensurePermission(permission: string, desc: string): Promise<boolean> {
@@ -41,10 +42,6 @@ export async function convertHandwritingToHeading(report: ProgressReporter = () 
 
 async function runConversion(report: ProgressReporter): Promise<ConversionResult> {
   try {
-    const settings = await loadSettings();
-    const OCR_FONT_SIZE = settings.fontSize;
-    const TITLE_STYLE = settings.headingStyle;
-
     /* report('Checking permissions…'); */
     const readOk = await withTimeout('file-read permission check', ensurePermission(
       'plugin.permission.FILE:READ', 'Read the selected handwriting for OCR.',

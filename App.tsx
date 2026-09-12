@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import {
+  ActivityIndicator,
   DeviceEventEmitter,
   StatusBar,
   StyleSheet,
@@ -16,34 +17,25 @@ import {
 import { PluginManager } from 'sn-plugin-lib';
 import { convertHandwritingToHeading, ConversionResult } from './ocr2heading';
 import { checkPendingButton } from './pluginButtonBridge';
-import { CONVERT_BUTTON_ID, SETTINGS_BUTTON_ID } from './buttonIds';
-import SettingsScreen from './SettingsScreen';
 
 /**
  * Plugin View
- * Routes between the conversion flow and the settings screen based on
- * which button fired (CONVERT_BUTTON_ID vs SETTINGS_BUTTON_ID). Re-runs
- * on EVERY button press, not just on mount — the component may stay
- * alive across separate presses, so this reacts to the press event
- * (via pluginButtonBridge) rather than assuming a fresh mount each time.
- *
- * On success: shows nothing at all and closes immediately — no spinner,
- * no "Done" flash. Only a failed conversion renders any UI, since that's
- * the only case where the user has no other way to know what happened
- * (no console access in normal use).
+ * Runs the handwriting-to-heading conversion on EVERY button press — not
+ * just once on mount. The component may stay alive across separate
+ * presses, so re-running only requires reacting to the button-press event
+ * (via pluginButtonBridge), not remounting.
  */
 function App(): React.JSX.Element {
   const isDarkMode = useColorScheme() === 'dark';
-  const [showSettings, setShowSettings] = React.useState(false);
   const [result, setResult] = React.useState<ConversionResult | null>(null);
-  const [step, setStep] = React.useState<string>('Starting…');
+  const [step, setStep] = React.useState<string>('Converting…');
   const textColor = { color: isDarkMode ? '#ffffff' : '#000000' };
 
   const handleClose = () => {
     PluginManager.closePluginView();
   };
 
-  const runConversion = React.useCallback(() => {
+  const runOnce = React.useCallback(() => {
     let cancelled = false;
     setResult(null);
     setStep('Starting…');
@@ -53,8 +45,9 @@ function App(): React.JSX.Element {
       if (cancelled) return;
       setResult(res);
       if (res.success) {
-        // Close immediately — nothing was ever shown to preserve.
-        if (!cancelled) PluginManager.closePluginView();
+        setTimeout(() => {
+          if (!cancelled) PluginManager.closePluginView();
+        }, 400);
       }
     });
     return () => {
@@ -62,44 +55,25 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  // Call runConversion (or show settings) DIRECTLY from the event handler,
-  // every time it fires — never routed through React state-change
-  // detection. setState bails out (skips re-render / dependent effects)
-  // when the new value equals the current one, which silently broke
-  // repeat presses of the SAME button when this was previously wired as
-  // "setButtonId(id)" + a separate effect watching buttonId. Two presses
-  // of the lasso button in a row sent the same id both times, so the
-  // effect never re-fired on the second press. Calling the handler
-  // imperatively here sidesteps that entirely.
   React.useEffect(() => {
-    let cleanupCurrent: (() => void) | undefined;
+    // Clear any pending press recorded before this listener could attach —
+    // we always run once on mount regardless (mount only happens as a
+    // direct result of a press when showType:1), this just avoids a stale
+    // pending flag lingering into a future re-subscription.
+    checkPendingButton();
+    let cleanupCurrent = runOnce();
 
-    const handlePress = (id: number | null) => {
-      cleanupCurrent?.();
-      if (id === SETTINGS_BUTTON_ID) {
-        setShowSettings(true);
-        cleanupCurrent = undefined;
-      } else {
-        setShowSettings(false);
-        cleanupCurrent = runConversion();
-      }
-    };
-
-    handlePress(checkPendingButton() ?? CONVERT_BUTTON_ID);
-
-    const sub = DeviceEventEmitter.addListener('pluginButton', (e) => {
-      handlePress(e.id);
+    // React to every SUBSEQUENT press while this component stays mounted.
+    const sub = DeviceEventEmitter.addListener('pluginButton', () => {
+      cleanupCurrent();
+      cleanupCurrent = runOnce();
     });
 
     return () => {
-      cleanupCurrent?.();
+      cleanupCurrent();
       sub.remove();
     };
-  }, [runConversion]);
-
-  if (showSettings) {
-    return <SettingsScreen onClose={handleClose} />;
-  }
+  }, [runOnce]);
 
   return (
     <View style={styles.container}>
@@ -110,11 +84,6 @@ function App(): React.JSX.Element {
         barStyle={isDarkMode ? 'light-content' : 'dark-content'}
         backgroundColor={isDarkMode ? '#000000' : '#ffffff'}
       />
-      {/* Nothing rendered while loading or on success — blank screen,
-          just the close button above. Uncomment the spinner/step text
-          below together with the report() calls in ocr2heading.ts to
-          restore visible progress for debugging. */}
-      {/*
       {result === null && (
         <>
           <ActivityIndicator size="large" color={isDarkMode ? '#ffffff' : '#000000'} />
@@ -122,7 +91,6 @@ function App(): React.JSX.Element {
         </>
       )}
       {result?.success && <Text style={[styles.statusText, textColor]}>✅ Done</Text>}
-      */}
       {result && !result.success && (
         <Text style={[styles.errorText, textColor]}>❌ {result.message}</Text>
       )}
