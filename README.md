@@ -100,3 +100,9 @@ To learn more about React Native, take a look at the following resources:
 # OCRheading
 Supernote plugin for text lasso OCR to heading promotion
 1de00fad0b5ff3af544cdd7d7131a37b00f9aad5
+
+# Demo video
+
+https://github.com/user-attachments/assets/ac79f76d-cf71-43a7-baee-7f78ab34557c
+
+
