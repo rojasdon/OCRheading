@@ -6,6 +6,7 @@
     "name":  "OCRheading",
     "versionCode":  "2",
     "versionName":  "0.1.0",
+    "Don Rojas, with Claude (Anthropic)",
     "jsMainPath":  "index",
     "uses-permissions": [
       "plugin.permission.FILE:READ",
