@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "author": "Don Rojas, with Claude (Anthropic)",
+  "license": "CC-BY-NC-SA-4.0",
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",

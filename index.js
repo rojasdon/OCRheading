@@ -3,17 +3,27 @@ import App from './App';
 import { name as appName } from './app.json';
 import { PluginManager } from 'sn-plugin-lib';
 import { recordButtonPress } from './pluginButtonBridge';
+import { CONVERT_BUTTON_ID, SETTINGS_BUTTON_ID } from './buttonIds';
 
 AppRegistry.registerComponent(appName, () => App);
 PluginManager.init();
 
 PluginManager.registerButton(2, ['NOTE', 'DOC'], {
-  id: 201,
+  id: CONVERT_BUTTON_ID,
   name: 'Text OCR Heading',
   icon: Image.resolveAssetSource(
     require('./assets/icon/icon.png'),
   ).uri,
   editDataTypes: [0], // strokes only
+  showType: 1,
+});
+
+PluginManager.registerButton(1, ['NOTE', 'DOC'], {
+  id: SETTINGS_BUTTON_ID,
+  name: 'OCR Heading Settings',
+  icon: Image.resolveAssetSource(
+    require('./assets/icon/icon.png'),
+  ).uri,
   showType: 1,
 });
 
