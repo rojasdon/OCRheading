@@ -104,11 +104,11 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
     const horizontalPadding = 24;
     const verticalPadding = 16;
     const averageGlyphWidth = OCR_FONT_SIZE * 0.58;
-    const noWrapSafetyMargin = OCR_FONT_SIZE * 1.5;
+    const noWrapSafetyMargin = OCR_FONT_SIZE * 0.5; // was 1.5 — tightened per on-device feedback
     const desiredWidth = Math.min(
       Math.max(
         recognizedText.length * averageGlyphWidth + horizontalPadding + noWrapSafetyMargin,
-        OCR_FONT_SIZE * 3,
+        OCR_FONT_SIZE * 1.5, // was 3 — was forcing an oversized box for short titles
       ),
       pageWidth - 16,
     );
