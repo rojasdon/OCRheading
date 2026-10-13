@@ -1,5 +1,5 @@
 /** Mirrors the native flow: recognize -> replace -> dismiss -> re-lasso -> heading. */
-import {PluginCommAPI, PluginNoteAPI, PluginManager} from 'sn-plugin-lib';
+import {PluginCommAPI, PluginFileAPI, PluginNoteAPI, PluginManager} from 'sn-plugin-lib';
 import {loadSettings} from './settings';
 
 export type ConversionResult = {success: boolean; message?: string};
@@ -66,16 +66,27 @@ async function runConversion(report: ProgressReporter): Promise<ConversionResult
       return {success: false, message: 'The selection must contain handwriting strokes only.'};
     }
 
-    /* report('Reading selection bounds…'); */
-    const [sizeRes, rectRes]: any[] = await Promise.all([
-      withTimeout('reading the page size', PluginCommAPI.getPageDisplaySize()),
+    const [pathRes, pageRes, rectRes]: any[] = await Promise.all([
+      withTimeout('reading the file path', PluginCommAPI.getCurrentFilePath()),
+      withTimeout('reading the page number', PluginCommAPI.getCurrentPageNum()),
       withTimeout('reading the lasso bounds', PluginCommAPI.getLassoRect()),
     ]);
-    if (!sizeRes?.success || !sizeRes.result) {
-      return {success: false, message: errorMessage(sizeRes, 'Could not read the page size.')};
+    if (!pathRes?.success || typeof pathRes.result !== 'string') {
+      return {success: false, message: errorMessage(pathRes, 'Could not read the note path.')};
+    }
+    if (!pageRes?.success || typeof pageRes.result !== 'number') {
+      return {success: false, message: errorMessage(pageRes, 'Could not read the page number.')};
     }
     if (!rectRes?.success || !rectRes.result) {
       return {success: false, message: errorMessage(rectRes, 'Could not read the lasso bounds.')};
+    }
+
+    // Actual page size — the coordinate space the 0.2.x APIs on/after 3.30.45 use.
+    const sizeRes: any = await withTimeout(
+      'reading the page size', PluginFileAPI.getPageSize(pathRes.result, pageRes.result),
+    );
+    if (!sizeRes?.success || !sizeRes.result) {
+      return {success: false, message: errorMessage(sizeRes, 'Could not read the page size.')};
     }
 
     /* report('Recognizing handwriting…'); */
